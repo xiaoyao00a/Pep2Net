@@ -1,10 +1,10 @@
-# PepNet
+# Pep2Net
 
-A multi-label peptide property prediction framework based on a dual-branch deep learning architecture. PepNet combines pre-trained ESM protein language model embeddings with handcrafted physicochemical features to predict 51 functional and biological properties of peptide sequences.
+A multi-label peptide property prediction framework based on a dual-branch deep learning architecture. Pep2Net combines pre-trained ESM protein language model embeddings with handcrafted physicochemical features to predict 51 functional and biological properties of peptide sequences.
 
 ## Overview
 
-Peptide property prediction is challenging due to highly imbalanced labels and limited labeled data. PepNet addresses this with:
+Peptide property prediction is challenging due to highly imbalanced labels and limited labeled data. Pep2Net addresses this with:
 
 - **Dual-branch architecture**: semantic branch (ESM) + physicochemical branch (PC6, AAindex, BLOSUM62, AAC, DPC, PseAAC)
 - **Cross-attention fusion**: bidirectional alignment between the two branches
@@ -126,7 +126,7 @@ The best model checkpoint is selected by maximizing `aiming + coverage + accurac
 ## Project Structure
 
 ```
-PepNet/
+Pep2Net/
 ├── data/
 │   └── peptide.csv          # Main dataset
 ├── models/
