@@ -10,7 +10,7 @@ Peptide property prediction is challenging due to highly imbalanced labels and l
 - **Cross-attention fusion**: bidirectional alignment between the two branches
 - **Low-rank bilinear pooling**: for modeling cross-branch interactions
 - **Multi-sample dropout head**: ensemble of 6 parallel dropout samples for robust predictions
-- **Advanced training**: R-Drop, Supervised Contrastive Learning, FGM adversarial training, EMA
+- **Advanced training**: R-Drop, Supervised Contrastive Learning, EMA
 
 ## Predicted Properties (51 labels)
 
@@ -118,7 +118,6 @@ The best model checkpoint is selected by maximizing `aiming + coverage + accurac
 |-----------|---------|
 | R-Drop | KL divergence between two dropout-varied forward passes |
 | Supervised Contrastive | Pull together embeddings of co-labeled samples |
-| FGM Adversarial | Perturb embeddings for robustness |
 | EMA (decay=0.999) | Smoother parameter averaging |
 | Focal Dice Loss | Handle class imbalance with effective-sample weighting |
 | Multilabel Stratified Split | Preserve label distribution across train/test |
@@ -130,8 +129,7 @@ Pep2Net/
 ├── data/
 │   └── peptide.csv          # Main dataset
 ├── models/
-│   ├── Pep2Net_Model.py     # Core model definition
-│   └── FGM.py               # Fast Gradient Method adversarial trainer
+│   └── Pep2Net_Model.py     # Core model definition
 ├── Task/
 │   └── Task.py              # Training entry point
 └── utils/
