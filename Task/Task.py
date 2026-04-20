@@ -17,7 +17,6 @@ from sklearn.metrics import roc_auc_score
 
 sys.path.append('../')
 from models.Pep2Net_Model import EsmForMultiLabelSequenceClassification, set_seed
-from models.FGM import FGM
 
 
 
@@ -827,7 +826,6 @@ def train(config):
     ).to(config.device)
 
     ema = EMA(model, decay=0.999)
-    fgm = FGM(model)
 
     optimizer_grouped_parameters = build_param_groups(model, base_lr=config.learning_rate, wd=config.weight_decay)
     optimizer = AdamW(optimizer_grouped_parameters)
@@ -911,18 +909,6 @@ def train(config):
             loss = loss_sup + loss_rdrop + loss_supcon
             loss.backward()
             nn_utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-
-            # ---------- FGM ----------
-            fgm.attack()
-            loss_adv, _, _, _ = model(
-                input_ids=sample_aug2,
-                attention_mask=attention_mask_aug2,
-                labels=labels,
-                cb_weights=cb_weights
-            )
-            loss_adv.backward()
-            nn_utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            fgm.restore()
 
             optimizer.step()
             scheduler.step()
