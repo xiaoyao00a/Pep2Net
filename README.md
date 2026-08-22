@@ -143,8 +143,8 @@ Pep2Net/
 If you use Pep2Net, please cite the associated manuscript and the software release. Machine-readable citation metadata is available in [`CITATION.cff`](CITATION.cff).
 
 - Source code: https://github.com/xiaoyao00a/Pep2Net
-- Manuscript software version: `v1.0.0`
-- DOI archive: a Zenodo DOI will be added here after the `v1.0.0` record is published.
+- Manuscript software version: [`v1.0.0`](https://github.com/xiaoyao00a/Pep2Net/releases/tag/v1.0.0)
+- DOI archive: [https://doi.org/10.5281/zenodo.22054386](https://doi.org/10.5281/zenodo.22054386)
 
 ## License
 
