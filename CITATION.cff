@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use Pep2Net in your research, please cite this software and the associated manuscript."
+type: software
+title: "Pep2Net: An integrated peptide knowledge base and cross-attention model for multi-task prediction of peptides"
+version: 1.0.0
+date-released: 2026-08-22
+license: MIT
+repository-code: "https://github.com/xiaoyao00a/Pep2Net"
+url: "https://github.com/xiaoyao00a/Pep2Net"
+authors:
+  - family-names: Zheng
+    given-names: Boyan
+  - family-names: Yuan
+    given-names: Jiahao
+  - family-names: Wang
+    given-names: Yuzhou
+  - family-names: Cao
+    given-names: Dongsheng
+  - family-names: Zou
+    given-names: Quan
+  - family-names: Chen
+    given-names: Haowen
+    email: hwchen@hnu.edu.cn
+  - family-names: Fu
+    given-names: Xiangzheng
+    email: fxz326@hnu.edu.cn
