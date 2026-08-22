@@ -137,3 +137,15 @@ Pep2Net/
     ├── evaluation.py        # Multi-label evaluation metrics
     └── log_helper.py        # Logging utilities
 ```
+
+## Citation and archived version
+
+If you use Pep2Net, please cite the associated manuscript and the software release. Machine-readable citation metadata is available in [`CITATION.cff`](CITATION.cff).
+
+- Source code: https://github.com/xiaoyao00a/Pep2Net
+- Manuscript software version: `v1.0.0`
+- DOI archive: a Zenodo DOI will be added here after the `v1.0.0` record is published.
+
+## License
+
+Pep2Net is released under the [MIT License](LICENSE), an OSI-approved open-source license.
