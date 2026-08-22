@@ -2,7 +2,8 @@ cff-version: 1.2.0
 message: "If you use Pep2Net in your research, please cite this software and the associated manuscript."
 type: software
 title: "Pep2Net: an integrated peptide knowledge base and cross-attention model for multi-task prediction of peptides"
-version: 1.0.0\ndoi: "10.5281/zenodo.22054386"
+version: 1.0.0
+doi: "10.5281/zenodo.22054386"
 date-released: 2026-08-22
 license: MIT
 repository-code: "https://github.com/xiaoyao00a/Pep2Net"
