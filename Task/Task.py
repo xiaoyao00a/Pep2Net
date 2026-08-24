@@ -237,6 +237,22 @@ def load_csv_dataframe(csv_path):
     for c in label_cols:
         df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0).clip(0, 1).astype(np.float32)
 
+    duplicate_rows = df[df.duplicated(subset=[seq_col], keep=False)]
+    if len(duplicate_rows) > 0:
+        label_variation = duplicate_rows.groupby(seq_col, sort=False)[label_cols].nunique(dropna=False)
+        conflicting_sequences = label_variation.index[(label_variation > 1).any(axis=1)].tolist()
+        if conflicting_sequences:
+            raise ValueError(
+                f"Conflicting label annotations found for {len(conflicting_sequences)} duplicated sequences."
+            )
+
+    original_size = len(df)
+    df = df.drop_duplicates(subset=[seq_col], keep='first').reset_index(drop=True)
+    logging.info(
+        f"Sequence deduplication: retained {len(df)} unique sequences and removed "
+        f"{original_size - len(df)} duplicate rows."
+    )
+
     return df, seq_col, label_cols
 
 
@@ -399,6 +415,26 @@ def split_dataframe_multilabel_stratified(df, label_cols, seed,
     return train_df, validation_df, test_df
 
 
+def verify_disjoint_sequence_splits(train_df, validation_df, test_df, seq_col):
+    train_sequences = set(train_df[seq_col])
+    validation_sequences = set(validation_df[seq_col])
+    test_sequences = set(test_df[seq_col])
+
+    train_validation_overlap = train_sequences & validation_sequences
+    train_test_overlap = train_sequences & test_sequences
+    validation_test_overlap = validation_sequences & test_sequences
+
+    if train_validation_overlap or train_test_overlap or validation_test_overlap:
+        raise RuntimeError(
+            "Sequence leakage detected across data splits: "
+            f"train-validation={len(train_validation_overlap)}, "
+            f"train-test={len(train_test_overlap)}, "
+            f"validation-test={len(validation_test_overlap)}."
+        )
+
+    logging.info("Verified zero sequence overlap across training, validation, and test splits.")
+
+
 def log_split_label_distribution(train_df, validation_df, test_df, label_cols):
     train_counts = train_df[label_cols].sum(axis=0).values.astype(np.int64)
     validation_counts = validation_df[label_cols].sum(axis=0).values.astype(np.int64)
@@ -426,6 +462,8 @@ def build_dataloaders(df, seq_col, label_cols, tokenizer, config):
         validation_size=0.1,
         test_size=0.2
     )
+
+    verify_disjoint_sequence_splits(train_df, validation_df, test_df, seq_col)
 
     train_df.to_csv(os.path.join(config.split_save_dir, f'train_run{config.model_num}.csv'), index=False)
     validation_df.to_csv(os.path.join(config.split_save_dir, f'validation_run{config.model_num}.csv'), index=False)
