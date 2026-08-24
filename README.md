@@ -35,7 +35,7 @@ Place `peptide.csv` in the `data/` directory. The CSV must contain:
 | `sequence` | Amino acid sequence string |
 | 51 label columns | Binary (0/1) for each peptide property |
 
-The default dataset (`data/peptide.csv`) contains 3,642 labeled peptide sequences.
+The bundled dataset contains 3,305 unique labeled peptide sequences after sequence normalization and duplicate removal.
 
 ## ESM Pre-trained Model
 
@@ -112,6 +112,8 @@ Input Sequence
 
 The best model checkpoint is selected on the validation set by maximizing `aiming + coverage + accuracy`. The test set is evaluated once after training using the selected checkpoint.
 
+Sequences are normalized and deduplicated before splitting. Duplicate sequences with identical labels are retained once, conflicting duplicate annotations stop preprocessing, and the generated training, validation, and test splits are verified to have zero sequence overlap.
+
 ## Training Techniques
 
 | Technique | Purpose |
@@ -121,6 +123,7 @@ The best model checkpoint is selected on the validation set by maximizing `aimin
 | EMA (decay=0.999) | Smoother parameter averaging |
 | Focal Dice Loss | Handle class imbalance with effective-sample weighting |
 | Multilabel Stratified Split | Preserve label distribution across train/validation/test |
+| Sequence-level Deduplication | Prevent identical peptide sequences from appearing in multiple splits |
 
 ## Project Structure
 
@@ -143,9 +146,9 @@ Pep2Net/
 If you use Pep2Net, please cite the associated manuscript and the software release. Machine-readable citation metadata is available in [`CITATION.cff`](CITATION.cff).
 
 - Source code: https://github.com/xiaoyao00a/Pep2Net
-- Current corrected release: [`v1.1.0`](https://github.com/xiaoyao00a/Pep2Net/releases/tag/v1.1.0)
-- Current DOI archive: [https://doi.org/10.5281/zenodo.22084154](https://doi.org/10.5281/zenodo.22084154)
-- Previous archived release: [`v1.0.0`](https://github.com/xiaoyao00a/Pep2Net/releases/tag/v1.0.0), [https://doi.org/10.5281/zenodo.22054386](https://doi.org/10.5281/zenodo.22054386)
+- Current release: [`v1.2.0`](https://github.com/xiaoyao00a/Pep2Net/releases/tag/v1.2.0)
+- Current DOI archive: [https://doi.org/10.5281/zenodo.22085358](https://doi.org/10.5281/zenodo.22085358)
+- Previous archived releases: [`v1.1.0`](https://github.com/xiaoyao00a/Pep2Net/releases/tag/v1.1.0), [https://doi.org/10.5281/zenodo.22084154](https://doi.org/10.5281/zenodo.22084154); [`v1.0.0`](https://github.com/xiaoyao00a/Pep2Net/releases/tag/v1.0.0), [https://doi.org/10.5281/zenodo.22054386](https://doi.org/10.5281/zenodo.22054386)
 
 ## License
 
