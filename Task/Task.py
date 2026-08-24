@@ -372,45 +372,69 @@ def multilabel_stratified_train_test_split_indices(label_matrix: np.ndarray,
         )
 
 
-def split_dataframe_4_to_1_multilabel_stratified(df, label_cols, seed, test_size=0.2):
+def split_dataframe_multilabel_stratified(df, label_cols, seed,
+                                          validation_size=0.1,
+                                          test_size=0.2):
+    if validation_size <= 0 or test_size <= 0 or validation_size + test_size >= 1:
+        raise ValueError("validation_size and test_size must be positive and sum to less than 1.")
+
     label_matrix = df[label_cols].values.astype(np.int64)
-    train_idx, test_idx = multilabel_stratified_train_test_split_indices(
+    train_validation_idx, test_idx = multilabel_stratified_train_test_split_indices(
         label_matrix=label_matrix,
         test_size=test_size,
         seed=seed
     )
 
-    train_df = df.iloc[train_idx].reset_index(drop=True)
+    train_validation_df = df.iloc[train_validation_idx].reset_index(drop=True)
+    relative_validation_size = validation_size / (1.0 - test_size)
+    train_idx, validation_idx = multilabel_stratified_train_test_split_indices(
+        label_matrix=train_validation_df[label_cols].values.astype(np.int64),
+        test_size=relative_validation_size,
+        seed=seed + 1
+    )
+
+    train_df = train_validation_df.iloc[train_idx].reset_index(drop=True)
+    validation_df = train_validation_df.iloc[validation_idx].reset_index(drop=True)
     test_df = df.iloc[test_idx].reset_index(drop=True)
-    return train_df, test_df
+    return train_df, validation_df, test_df
 
 
-def log_split_label_distribution(train_df, test_df, label_cols):
+def log_split_label_distribution(train_df, validation_df, test_df, label_cols):
     train_counts = train_df[label_cols].sum(axis=0).values.astype(np.int64)
+    validation_counts = validation_df[label_cols].sum(axis=0).values.astype(np.int64)
     test_counts = test_df[label_cols].sum(axis=0).values.astype(np.int64)
-    total_counts = train_counts + test_counts
+    total_counts = train_counts + validation_counts + test_counts
 
     logging.info("Label distribution after multilabel stratified split:")
-    logging.info("Idx\tLabel\tTrainPos\tTestPos\tTotalPos\tTestRatio")
-    for i, (name, tr, te, tt) in enumerate(zip(label_cols, train_counts, test_counts, total_counts)):
-        ratio = (te / tt) if tt > 0 else 0.0
-        logging.info(f"{i:02d}\t{name}\t{int(tr)}\t{int(te)}\t{int(tt)}\t{ratio:.3f}")
+    logging.info("Idx\tLabel\tTrainPos\tValidationPos\tTestPos\tTotalPos\tValidationRatio\tTestRatio")
+    for i, (name, tr, va, te, tt) in enumerate(
+        zip(label_cols, train_counts, validation_counts, test_counts, total_counts)
+    ):
+        validation_ratio = (va / tt) if tt > 0 else 0.0
+        test_ratio = (te / tt) if tt > 0 else 0.0
+        logging.info(
+            f"{i:02d}\t{name}\t{int(tr)}\t{int(va)}\t{int(te)}\t{int(tt)}\t"
+            f"{validation_ratio:.3f}\t{test_ratio:.3f}"
+        )
 
 
 def build_dataloaders(df, seq_col, label_cols, tokenizer, config):
-    train_df, test_df = split_dataframe_4_to_1_multilabel_stratified(
+    train_df, validation_df, test_df = split_dataframe_multilabel_stratified(
         df=df,
         label_cols=label_cols,
         seed=config.seed,
+        validation_size=0.1,
         test_size=0.2
     )
 
     train_df.to_csv(os.path.join(config.split_save_dir, f'train_run{config.model_num}.csv'), index=False)
+    validation_df.to_csv(os.path.join(config.split_save_dir, f'validation_run{config.model_num}.csv'), index=False)
     test_df.to_csv(os.path.join(config.split_save_dir, f'test_run{config.model_num}.csv'), index=False)
 
-    log_split_label_distribution(train_df, test_df, label_cols)
+    log_split_label_distribution(train_df, validation_df, test_df, label_cols)
 
     train_dataset = CSVMultiLabelDataset(train_df, seq_col, label_cols)
+    validation_dataset = CSVMultiLabelDataset(validation_df, seq_col, label_cols)
     test_dataset = CSVMultiLabelDataset(test_df, seq_col, label_cols)
     collator = Collator(tokenizer, max_length=config.max_sen_len)
 
@@ -427,6 +451,15 @@ def build_dataloaders(df, seq_col, label_cols, tokenizer, config):
         generator=g
     )
 
+    validation_loader = DataLoader(
+        validation_dataset,
+        batch_size=config.batch_size,
+        shuffle=False,
+        num_workers=config.num_workers,
+        pin_memory=torch.cuda.is_available(),
+        collate_fn=collator
+    )
+
     test_loader = DataLoader(
         test_dataset,
         batch_size=config.batch_size,
@@ -436,7 +469,7 @@ def build_dataloaders(df, seq_col, label_cols, tokenizer, config):
         collate_fn=collator
     )
 
-    return train_loader, test_loader, train_df, test_df
+    return train_loader, validation_loader, test_loader, train_df, validation_df, test_df
 
 
 # =========================================================================================
@@ -811,9 +844,12 @@ def train(config):
     config.mask_token_id = tokenizer.mask_token_id
 
     # 3) dataloader
-    train_loader, test_loader, train_df, test_df = build_dataloaders(df, seq_col, label_cols, tokenizer, config)
+    train_loader, validation_loader, test_loader, train_df, validation_df, test_df = build_dataloaders(
+        df, seq_col, label_cols, tokenizer, config
+    )
 
     logging.info(f"Train size: {len(train_df)}")
+    logging.info(f"Validation size: {len(validation_df)}")
     logging.info(f"Test size: {len(test_df)}")
 
     # 4) model
@@ -842,6 +878,7 @@ def train(config):
 
     best_score = -1.0
     best_epoch = -1
+    best_info = None
 
     logging.info(
         f"[Config] rdrop_alpha={config.rdrop_alpha}, "
@@ -929,63 +966,67 @@ def train(config):
         ema.apply_to(model)
 
         train_metrics = test_model(train_loader, model, config, label_cols=label_cols, return_per_class=True)
-        test_metrics = test_model(test_loader, model, config, label_cols=label_cols, return_per_class=True)
+        validation_metrics = test_model(
+            validation_loader, model, config, label_cols=label_cols, return_per_class=True
+        )
 
         avg_loss = running_loss / max(1, len(train_loader))
         epoch_time = time.time() - start_time
 
-        test_per_class_metrics = test_metrics['per_class_metrics']
-        test_per_class_macro = test_metrics['per_class_macro']
+        validation_per_class_metrics = validation_metrics['per_class_metrics']
+        validation_per_class_macro = validation_metrics['per_class_macro']
 
         logging.info(
             f"Epoch {epoch + 1} finished | "
             f"time={epoch_time:.2f}s | avg_loss={avg_loss:.4f} | "
             f"train_aiming={train_metrics['aiming']:.4f} | "
-            f"test_aiming={test_metrics['aiming']:.4f} | "
-            f"test_coverage={test_metrics['coverage']:.4f} | "
-            f"test_accuracy={test_metrics['accuracy']:.4f} | "
-            f"test_abs_true={test_metrics['absolute_true']:.4f} | "
-            f"test_abs_false={test_metrics['absolute_false']:.4f} | "
-            f"test_recall={test_metrics['recall']:.4f} | "
-            f"test_specificity={test_metrics['specificity']:.4f} | "
-            f"test_f1={test_metrics['f1']:.4f} | "
-            f"test_auc_macro={_fmt_metric(test_metrics['auc_macro'])} | "
-            f"test_auc_micro={_fmt_metric(test_metrics['auc_micro'])} | "
-            f"test_acc={test_metrics['acc']:.4f} | "
-            f"test_mcc={test_metrics['mcc']:.4f}"
+            f"validation_aiming={validation_metrics['aiming']:.4f} | "
+            f"validation_coverage={validation_metrics['coverage']:.4f} | "
+            f"validation_accuracy={validation_metrics['accuracy']:.4f} | "
+            f"validation_abs_true={validation_metrics['absolute_true']:.4f} | "
+            f"validation_abs_false={validation_metrics['absolute_false']:.4f} | "
+            f"validation_recall={validation_metrics['recall']:.4f} | "
+            f"validation_specificity={validation_metrics['specificity']:.4f} | "
+            f"validation_f1={validation_metrics['f1']:.4f} | "
+            f"validation_auc_macro={_fmt_metric(validation_metrics['auc_macro'])} | "
+            f"validation_auc_micro={_fmt_metric(validation_metrics['auc_micro'])} | "
+            f"validation_acc={validation_metrics['acc']:.4f} | "
+            f"validation_mcc={validation_metrics['mcc']:.4f}"
         )
 
         logging.info(
-            f"[Epoch {epoch + 1}] TEST per-class macro summary | "
-            f"Recall={test_per_class_macro['recall']:.4f} | "
-            f"Specificity={test_per_class_macro['specificity']:.4f} | "
-            f"F1-score={test_per_class_macro['f1']:.4f} | "
-            f"AUC={_fmt_metric(test_per_class_macro['auc'])} | "
-            f"ACC={test_per_class_macro['acc']:.4f} | "
-            f"MCC={test_per_class_macro['mcc']:.4f}"
+            f"[Epoch {epoch + 1}] VALIDATION per-class macro summary | "
+            f"Recall={validation_per_class_macro['recall']:.4f} | "
+            f"Specificity={validation_per_class_macro['specificity']:.4f} | "
+            f"F1-score={validation_per_class_macro['f1']:.4f} | "
+            f"AUC={_fmt_metric(validation_per_class_macro['auc'])} | "
+            f"ACC={validation_per_class_macro['acc']:.4f} | "
+            f"MCC={validation_per_class_macro['mcc']:.4f}"
         )
 
         print(
             f"Epoch {epoch + 1}: "
-            f"Recall={test_metrics['recall']:.4f}, "
-            f"Specificity={test_metrics['specificity']:.4f}, "
-            f"F1-score={test_metrics['f1']:.4f}, "
-            f"AUC_macro={_fmt_metric(test_metrics['auc_macro'])}, "
-            f"ACC={test_metrics['acc']:.4f}, "
-            f"MCC={test_metrics['mcc']:.4f}"
+            f"Validation Recall={validation_metrics['recall']:.4f}, "
+            f"Specificity={validation_metrics['specificity']:.4f}, "
+            f"F1-score={validation_metrics['f1']:.4f}, "
+            f"AUC_macro={_fmt_metric(validation_metrics['auc_macro'])}, "
+            f"ACC={validation_metrics['acc']:.4f}, "
+            f"MCC={validation_metrics['mcc']:.4f}"
         )
-
 
         log_per_class_metrics_table(
-            f"[Epoch {epoch + 1}] TEST per-class metrics",
-            test_per_class_metrics
+            f"[Epoch {epoch + 1}] VALIDATION per-class metrics",
+            validation_per_class_metrics
         )
 
+        validation_score = (
+            validation_metrics['aiming']
+            + validation_metrics['coverage']
+            + validation_metrics['accuracy']
+        )
 
-        test_score = test_metrics['aiming'] + test_metrics['coverage'] + test_metrics['accuracy']
-
-        if test_score > best_score:
-            best_score = test_score
+        if validation_score > best_score:
+            best_score = validation_score
             best_epoch = epoch + 1
 
             torch.save(model.state_dict(), config.best_model_path)
@@ -995,33 +1036,30 @@ def train(config):
                 "run_id": config.model_num,
                 "seed": config.seed,
                 "best_epoch": best_epoch,
-                "best_test_score": float(best_score),
-
-                "best_test_aiming": float(test_metrics['aiming']),
-                "best_test_coverage": float(test_metrics['coverage']),
-                "best_test_accuracy": float(test_metrics['accuracy']),
-                "best_test_absolute_true": float(test_metrics['absolute_true']),
-                "best_test_absolute_false": float(test_metrics['absolute_false']),
-
-                "best_test_precision": float(test_metrics['precision']),
-                "best_test_recall": float(test_metrics['recall']),
-                "best_test_specificity": float(test_metrics['specificity']),
-                "best_test_f1": float(test_metrics['f1']),
-                "best_test_acc": float(test_metrics['acc']),
-                "best_test_mcc": float(test_metrics['mcc']),
-                "best_test_auc_macro": None if not np.isfinite(test_metrics['auc_macro']) else float(test_metrics['auc_macro']),
-                "best_test_auc_micro": None if not np.isfinite(test_metrics['auc_micro']) else float(test_metrics['auc_micro']),
-
-                "best_test_per_class_macro_recall": float(test_per_class_macro['recall']),
-                "best_test_per_class_macro_specificity": float(test_per_class_macro['specificity']),
-                "best_test_per_class_macro_f1": float(test_per_class_macro['f1']),
-                "best_test_per_class_macro_auc": None if not np.isfinite(test_per_class_macro['auc']) else float(test_per_class_macro['auc']),
-                "best_test_per_class_macro_acc": float(test_per_class_macro['acc']),
-                "best_test_per_class_macro_mcc": float(test_per_class_macro['mcc']),
-
+                "best_validation_score": float(best_score),
+                "best_validation_aiming": float(validation_metrics['aiming']),
+                "best_validation_coverage": float(validation_metrics['coverage']),
+                "best_validation_accuracy": float(validation_metrics['accuracy']),
+                "best_validation_absolute_true": float(validation_metrics['absolute_true']),
+                "best_validation_absolute_false": float(validation_metrics['absolute_false']),
+                "best_validation_precision": float(validation_metrics['precision']),
+                "best_validation_recall": float(validation_metrics['recall']),
+                "best_validation_specificity": float(validation_metrics['specificity']),
+                "best_validation_f1": float(validation_metrics['f1']),
+                "best_validation_acc": float(validation_metrics['acc']),
+                "best_validation_mcc": float(validation_metrics['mcc']),
+                "best_validation_auc_macro": None if not np.isfinite(validation_metrics['auc_macro']) else float(validation_metrics['auc_macro']),
+                "best_validation_auc_micro": None if not np.isfinite(validation_metrics['auc_micro']) else float(validation_metrics['auc_micro']),
+                "best_validation_per_class_macro_recall": float(validation_per_class_macro['recall']),
+                "best_validation_per_class_macro_specificity": float(validation_per_class_macro['specificity']),
+                "best_validation_per_class_macro_f1": float(validation_per_class_macro['f1']),
+                "best_validation_per_class_macro_auc": None if not np.isfinite(validation_per_class_macro['auc']) else float(validation_per_class_macro['auc']),
+                "best_validation_per_class_macro_acc": float(validation_per_class_macro['acc']),
+                "best_validation_per_class_macro_mcc": float(validation_per_class_macro['mcc']),
                 "num_labels": config.num_labels,
                 "label_cols": label_cols,
                 "train_size": int(len(train_df)),
+                "validation_size": int(len(validation_df)),
                 "test_size": int(len(test_df)),
             }
 
@@ -1030,22 +1068,81 @@ def train(config):
 
             logging.info(
                 f"[Best Model Updated] epoch={best_epoch}, "
-                f"test_score={best_score:.4f} | "
-                f"Recall={test_metrics['recall']:.4f}, "
-                f"Specificity={test_metrics['specificity']:.4f}, "
-                f"F1={test_metrics['f1']:.4f}, "
-                f"AUC_macro={_fmt_metric(test_metrics['auc_macro'])}, "
-                f"ACC={test_metrics['acc']:.4f}, "
-                f"MCC={test_metrics['mcc']:.4f} | "
+                f"validation_score={best_score:.4f} | "
+                f"Recall={validation_metrics['recall']:.4f}, "
+                f"Specificity={validation_metrics['specificity']:.4f}, "
+                f"F1={validation_metrics['f1']:.4f}, "
+                f"AUC_macro={_fmt_metric(validation_metrics['auc_macro'])}, "
+                f"ACC={validation_metrics['acc']:.4f}, "
+                f"MCC={validation_metrics['mcc']:.4f} | "
                 f"saved to {config.best_model_path}"
             )
 
-    
         ema.restore(model)
+
+    if best_info is None:
+        raise RuntimeError("No best model was selected from the validation set.")
+
+    model.load_state_dict(torch.load(config.best_model_path, map_location=config.device))
+    test_metrics = test_model(test_loader, model, config, label_cols=label_cols, return_per_class=True)
+    test_per_class_metrics = test_metrics['per_class_metrics']
+    test_per_class_macro = test_metrics['per_class_macro']
+
+    logging.info(
+        f"FINAL TEST | "
+        f"aiming={test_metrics['aiming']:.4f} | "
+        f"coverage={test_metrics['coverage']:.4f} | "
+        f"accuracy={test_metrics['accuracy']:.4f} | "
+        f"absolute_true={test_metrics['absolute_true']:.4f} | "
+        f"absolute_false={test_metrics['absolute_false']:.4f} | "
+        f"recall={test_metrics['recall']:.4f} | "
+        f"specificity={test_metrics['specificity']:.4f} | "
+        f"f1={test_metrics['f1']:.4f} | "
+        f"auc_macro={_fmt_metric(test_metrics['auc_macro'])} | "
+        f"auc_micro={_fmt_metric(test_metrics['auc_micro'])} | "
+        f"acc={test_metrics['acc']:.4f} | "
+        f"mcc={test_metrics['mcc']:.4f}"
+    )
+
+    print(
+        f"Final Test: Recall={test_metrics['recall']:.4f}, "
+        f"Specificity={test_metrics['specificity']:.4f}, "
+        f"F1-score={test_metrics['f1']:.4f}, "
+        f"AUC_macro={_fmt_metric(test_metrics['auc_macro'])}, "
+        f"ACC={test_metrics['acc']:.4f}, "
+        f"MCC={test_metrics['mcc']:.4f}"
+    )
+
+    log_per_class_metrics_table("FINAL TEST per-class metrics", test_per_class_metrics)
+
+    best_info.update({
+        "final_test_aiming": float(test_metrics['aiming']),
+        "final_test_coverage": float(test_metrics['coverage']),
+        "final_test_accuracy": float(test_metrics['accuracy']),
+        "final_test_absolute_true": float(test_metrics['absolute_true']),
+        "final_test_absolute_false": float(test_metrics['absolute_false']),
+        "final_test_precision": float(test_metrics['precision']),
+        "final_test_recall": float(test_metrics['recall']),
+        "final_test_specificity": float(test_metrics['specificity']),
+        "final_test_f1": float(test_metrics['f1']),
+        "final_test_acc": float(test_metrics['acc']),
+        "final_test_mcc": float(test_metrics['mcc']),
+        "final_test_auc_macro": None if not np.isfinite(test_metrics['auc_macro']) else float(test_metrics['auc_macro']),
+        "final_test_auc_micro": None if not np.isfinite(test_metrics['auc_micro']) else float(test_metrics['auc_micro']),
+        "final_test_per_class_macro_recall": float(test_per_class_macro['recall']),
+        "final_test_per_class_macro_specificity": float(test_per_class_macro['specificity']),
+        "final_test_per_class_macro_f1": float(test_per_class_macro['f1']),
+        "final_test_per_class_macro_auc": None if not np.isfinite(test_per_class_macro['auc']) else float(test_per_class_macro['auc']),
+        "final_test_per_class_macro_acc": float(test_per_class_macro['acc']),
+        "final_test_per_class_macro_mcc": float(test_per_class_macro['mcc']),
+    })
+
+    with open(config.best_info_path, 'w', encoding='utf-8') as f:
+        json.dump(best_info, f, ensure_ascii=False, indent=2)
 
     logging.info(
         f"Run {config.model_num} finished. "
-        f"Best epoch={best_epoch}, best test score={best_score:.4f}"
+        f"Best epoch={best_epoch}, best validation score={best_score:.4f}"
     )
 
 
@@ -1060,3 +1157,4 @@ if __name__ == '__main__':
 
         cfg = TrainConfig(model_num=model_num)
         train(cfg)
+
