@@ -61,7 +61,7 @@ This runs 10 independent training runs by default (`NUM_RUNS = 10`). Each run pr
 | `best_model_{name}_run{N}.bin` | Best model weights |
 | `best_model_{name}_run{N}.json` | Best validation metrics |
 | `{name}_run{N}.log` | Training log |
-| `train_run{N}.csv` / `test_run{N}.csv` | Per-run data splits |
+| `train_run{N}.csv` / `validation_run{N}.csv` / `test_run{N}.csv` | Per-run 70%/10%/20% data splits |
 
 ## Key Configuration (`Task/Task.py`)
 
@@ -110,7 +110,7 @@ Input Sequence
 - Accuracy: Jaccard similarity
 - Absolute True: exact match ratio
 
-The best model checkpoint is selected by maximizing `aiming + coverage + accuracy`.
+The best model checkpoint is selected on the validation set by maximizing `aiming + coverage + accuracy`. The test set is evaluated once after training using the selected checkpoint.
 
 ## Training Techniques
 
@@ -120,7 +120,7 @@ The best model checkpoint is selected by maximizing `aiming + coverage + accurac
 | Supervised Contrastive | Pull together embeddings of co-labeled samples |
 | EMA (decay=0.999) | Smoother parameter averaging |
 | Focal Dice Loss | Handle class imbalance with effective-sample weighting |
-| Multilabel Stratified Split | Preserve label distribution across train/test |
+| Multilabel Stratified Split | Preserve label distribution across train/validation/test |
 
 ## Project Structure
 
@@ -143,9 +143,11 @@ Pep2Net/
 If you use Pep2Net, please cite the associated manuscript and the software release. Machine-readable citation metadata is available in [`CITATION.cff`](CITATION.cff).
 
 - Source code: https://github.com/xiaoyao00a/Pep2Net
-- Manuscript software version: [`v1.0.0`](https://github.com/xiaoyao00a/Pep2Net/releases/tag/v1.0.0)
-- DOI archive: [https://doi.org/10.5281/zenodo.22054386](https://doi.org/10.5281/zenodo.22054386)
+- Current corrected release: [`v1.1.0`](https://github.com/xiaoyao00a/Pep2Net/releases/tag/v1.1.0)
+- Current DOI archive: [https://doi.org/10.5281/zenodo.22084154](https://doi.org/10.5281/zenodo.22084154)
+- Previous archived release: [`v1.0.0`](https://github.com/xiaoyao00a/Pep2Net/releases/tag/v1.0.0), [https://doi.org/10.5281/zenodo.22054386](https://doi.org/10.5281/zenodo.22054386)
 
 ## License
 
 Pep2Net is released under the [MIT License](LICENSE), an OSI-approved open-source license.
+
